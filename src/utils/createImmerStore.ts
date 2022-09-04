@@ -24,7 +24,7 @@ interface ISignals {
 }
 
 let ord = 0;
-const sigs: unique symbol = Symbol();
+const sigs: unique symbol = Symbol("sigs");
 
 interface IStoredSymbol {
   // proxyId: number;
@@ -242,15 +242,10 @@ export function createImmerStore<T extends object>(
     },
   );*/
 
-  const storeInternal = {
-    ord: 0,
-  };
-
   const db = new DeepProxy(
     {},
     {
       get(target, path, receiver) {
-        console.log(`Getting proxied things`, { target, path });
         return this.nest(function () {});
       },
       apply(target, thisArg, argList) {

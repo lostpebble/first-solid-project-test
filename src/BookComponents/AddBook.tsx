@@ -1,6 +1,6 @@
 import { createSignal, Show, For, createResource } from "solid-js";
 import { BooksApi } from "../api/BooksApi";
-import { setBookState } from "./BookState";
+import { BookStore } from "./BookState";
 
 export function AddBook() {
   const [input, setInput] = createSignal("");
@@ -41,7 +41,9 @@ export function AddBook() {
                   aria-label={`Add ${book.title} by ${book.author} to the bookshelf`}
                   onClick={(e) => {
                     e.preventDefault();
-                    setBookState((books) => [...books, book]);
+                    BookStore.update((s, o) => {
+                      s.books = [...o.books, book];
+                    });
                   }}
                 >
                   Add

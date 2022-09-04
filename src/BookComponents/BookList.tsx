@@ -1,17 +1,14 @@
-import { For } from "solid-js";
-import { bookState, testBookStore } from "./BookState";
+import { createSignal, For } from "solid-js";
+import { BookStore } from "./BookState";
+import { BooksApi } from "../api/BooksApi";
 
 export function BookList() {
-  const totalBooks = () => bookState().length;
-
-  // console.log(totalBooks());
-
   return (
     <ul>
-      <h2>My books ({testBookStore.state.books().length})</h2>
+      <h2>My books ({BookStore.state.books.length()})</h2>
       <button
         onClick={() => {
-          testBookStore.update((s) => {
+          BookStore.update((s) => {
             s.books.push({
               author: `${Math.random() * 1000} boon`,
               title: "great great",
@@ -23,7 +20,7 @@ export function BookList() {
       </button>
       <button
         onClick={() => {
-          testBookStore.update((s, o) => {
+          BookStore.update((s, o) => {
             const index = Math.floor(o.books.length * Math.random());
             s.books[index] = {
               title: `${o.books[index].title} boobs`,
@@ -34,11 +31,13 @@ export function BookList() {
       >
         Edit random book
       </button>
-      <For each={testBookStore.state.books()}>
+      <For each={BookStore.state.books()}>
         {(book) => {
+          const [editing, setEditing] = createSignal(false);
           return (
             <li>
               {book.title} <span style={{ "font-style": "italic" }}>({book.author})</span>
+              <button onClick={() => setEditing((e) => !e)}>{editing() ? "Save" : "Edit"}</button>
             </li>
           );
         }}
