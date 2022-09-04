@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { createImmerStore } from "../utils/createImmerStore";
 
 type Book = {
   title: string;
@@ -18,3 +19,12 @@ const [books, setBooks] = createSignal(initialBooks);
 
 export const bookState = books;
 export const setBookState = setBooks;
+
+export const testBookStore = createImmerStore({ books: initialBooks });
+
+testBookStore.update((s) => {
+  s.books.push({
+    title: "Test",
+    author: "Hi bean",
+  });
+});
