@@ -1,5 +1,4 @@
-import { Draft, enablePatches, Patch, produceWithPatches } from "immer";
-import { createStore, produce } from "solid-js/store";
+import { applyPatches, Draft, enablePatches, Patch, produceWithPatches } from "immer";
 import { createSignal, Signal } from "solid-js";
 import DeepProxy from "proxy-deep";
 
@@ -8,30 +7,24 @@ type NotWrappable = string | number | bigint | symbol | boolean | Function | nul
 
 type TUpdater<T> = (draft: Draft<T>, original: T) => void;
 
-type TFunctionified<O extends object> = {
-  [K in keyof O]: (() => O[K]) & (O[K] extends object ? TFunctionified<O[K]> : () => O[K]);
+type TFunctionified<O extends any> = {
+  [K in keyof O]: O[K] extends string | number | bigint | boolean | symbol | null | undefined
+    ? () => O[K]
+    : (() => O[K]) & TFunctionified<O[K]>;
 };
 
 interface IImmerStore<T extends object> {
   state: TFunctionified<T>;
   update: (updater: TUpdater<T>) => void;
+  undo: () => void;
+  redo: () => void;
 }
 
-interface ISignals {
-  [key: number | string]: {
-    sig: Signal<any>;
-  };
-}
-
-let ord = 0;
 const sigs: unique symbol = Symbol("sigs");
 
 interface IStoredSymbol {
-  // proxyId: number;
   signal: Signal<any>;
 }
-
-// type OtherKeys<T extends number|string|symbol = number|string|symbol> = T extends typeof sigs ? never : T;
 
 interface IDeepSignalStorage {
   [sigs]?: IStoredSymbol;
@@ -45,7 +38,12 @@ export function createImmerStore<T extends object>(
   const getInitialValue = (): T => initialValue;
   let currentState: T = initialValue;
 
-  // const [state, setState] = createStore(initialValue);
+  const storePatches: { forward: Patch[][]; reverse: Patch[][]; head: number } = {
+    head: 0,
+    forward: [],
+    reverse: [],
+  };
+
   const signals: {
     [proxyId: number]: {
       path: (string | number)[];
@@ -59,6 +57,7 @@ export function createImmerStore<T extends object>(
 
   console.log(signals);
   console.log(deepSignalStorage);
+  console.log(storePatches);
 
   function addSignalPathId(path: (string | number)[]): [signal: Signal<any>, signalState: any] {
     let curState: any = (currentState as any)[path[0]];
@@ -72,7 +71,6 @@ export function createImmerStore<T extends object>(
     for (let i = 0; i < path.length; i += 1) {
       if (i === path.length - 1) {
         // We are at the final index
-
         if (curObj[sigs] == null) {
           signal = createSignal(curState);
           curObj[sigs] = { signal };
@@ -95,65 +93,6 @@ export function createImmerStore<T extends object>(
     return [signal!, curState];
   }
 
-  /*function addSignal(
-    proxyId: number,
-    path: (string | number)[],
-  ): [signal: Signal<any>, signalState: any] {
-    const prev = signals[proxyId];
-    if (prev != null) {
-      let curObj: IDeepSignalStorage = deepSignalStorage[prev.path[0]];
-
-      for (let i = 1; i < prev.path.length; i += 1) {
-        curObj = curObj[prev.path[i]];
-      }
-
-      curObj[sigs] = curObj[sigs].filter((s) => s.proxyId !== proxyId);
-    }
-
-    let curState: any = (currentState as any)[path[0]];
-
-    if (deepSignalStorage[path[0]] == null) {
-      deepSignalStorage[path[0]] = {
-        [sigs]: [],
-      };
-    }
-
-    let curObj = deepSignalStorage[path[0]];
-    let signal: Signal<any>;
-    for (let i = 0; i < path.length; i += 1) {
-      if (i === path.length - 1) {
-        // We are at the final index
-        signal = createSignal(curState);
-
-        curObj[sigs].push({
-          signal,
-          proxyId,
-        });
-      } else {
-        if (curState != null) {
-          curState = curState[path[i + 1]];
-        }
-
-        if (curObj[path[i + 1]] == null) {
-          curObj[path[i + 1]] = {
-            [sigs]: [],
-          };
-        }
-
-        curObj = curObj[path[i + 1]];
-      }
-    }
-
-    signals[proxyId] = {
-      path,
-      signal: signal!,
-    };
-
-    console.log(`Added a signal with proxy ID: ${proxyId}`);
-
-    return [signal!, curState];
-  }*/
-
   function updateSignals(patches: Patch[]) {
     for (const patch of patches) {
       let curSigObj: IDeepSignalStorage = deepSignalStorage[patch.path[0]];
@@ -166,9 +105,6 @@ export function createImmerStore<T extends object>(
 
         if (i < patch.path.length - 1) {
           // We're still making our way towards the last index
-          /*for (const sig of curSigObj[sigs]) {
-            sig.signal[1](curState);
-          }*/
           curSigObj[sigs]?.signal[1](curState);
 
           if (curState != null) {
@@ -178,9 +114,6 @@ export function createImmerStore<T extends object>(
           curSigObj = curSigObj[patch.path[i + 1]];
         } else {
           // We're on the last index
-          /*for (const sig of curSigObj[sigs]) {
-
-          }*/
           if (patch.op === "remove") {
             curSigObj[sigs]?.signal[1](undefined);
           } else {
@@ -198,51 +131,40 @@ export function createImmerStore<T extends object>(
       updater(s, currentState);
     });
 
+    if (storePatches.head < 0) {
+      storePatches.forward = storePatches.forward.slice(0, storePatches.head);
+      storePatches.reverse = storePatches.reverse.slice(0, storePatches.head);
+    }
+
+    storePatches.forward.push(patches);
+    storePatches.reverse.push(inversePatches);
+    storePatches.head = 0;
+
     currentState = nextState;
     updateSignals(patches);
   };
 
-  /*function innerProxy(
-    [signal, signalState]: [Signal<any>, any],
-    proxyId: number,
-    currentPath: (string | number | Symbol)[],
-  ) {
-    if (typeof signalState !== "object") {
-      return signalState;
-    } else {
-      return new Proxy(signalState, {
-        get(target: {}, p: string | number | symbol, receiver: any): any {
-          const path = [...currentPath, p];
-          console.log(`Trying to get path`, path);
-          // const signal = addSignal(proxyId, path as any);
-          // const signalValue = signal[0]();
-          // console.log(`Signal value`, signalValue);
-          // const newProxy = innerProxy(signalValue, proxyId, path);
-          // console.log("New proxy", newProxy);
-          // return newProxy;
-          const output = addSignal(proxyId, path as any);
-          return innerProxy(output, proxyId, path);
-        },
-        apply(target: any, thisArg: any, argArray: any[]): any {
-          return signals[proxyId].signal[0]();
-        },
-      });
+  const undo = () => {
+    const currentIndex = storePatches.reverse.length - 1 + storePatches.head;
+    if (currentIndex >= 0) {
+      const reversePatches = storePatches.reverse[currentIndex];
+      currentState = applyPatches(currentState, reversePatches);
+      updateSignals(reversePatches);
+      storePatches.head -= 1;
     }
-  }*/
+  };
 
-  /*const stateProxy = new Proxy(
-    {},
-    {
-      get(target: {}, p: string | number | symbol): any {
-        const proxyId = ord++;
-        const path = [p];
-        const output = addSignal(proxyId, path as any);
-        return innerProxy(output, proxyId, path);
-      },
-    },
-  );*/
+  const redo = () => {
+    const currentIndex = storePatches.forward.length - 1 + (storePatches.head + 1);
+    if (currentIndex >= 0 && currentIndex < storePatches.forward.length) {
+      const forwardPatches = storePatches.forward[currentIndex];
+      currentState = applyPatches(currentState, forwardPatches);
+      updateSignals(forwardPatches);
+      storePatches.head += 1;
+    }
+  };
 
-  const db = new DeepProxy(
+  const stateProxy = new DeepProxy(
     {},
     {
       get(target, path, receiver) {
@@ -256,7 +178,9 @@ export function createImmerStore<T extends object>(
   );
 
   return {
-    state: db as TFunctionified<T>,
+    state: stateProxy as TFunctionified<T>,
     update,
+    undo,
+    redo,
   };
 }
