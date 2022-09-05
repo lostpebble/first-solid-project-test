@@ -107,10 +107,20 @@ export function createImmerStore<T extends object>(
           // We're still making our way towards the last index
           curSigObj[sigs]?.signal[1](curState);
 
+          if (i === patch.path.length - 2) {
+            // We're at the second last place
+            if (patch.op === "remove" || patch.op === "add") {
+              if (typeof patch.path[i + 1] === "number") {
+                const newLength = curState.length;
+                // We're looking at an array item probably, attempt to signal to length as well
+                curSigObj["length"]?.[sigs]?.signal[1](newLength);
+              }
+            }
+          }
+
           if (curState != null) {
             curState = curState[patch.path[i + 1]];
           }
-
           curSigObj = curSigObj[patch.path[i + 1]];
         } else {
           // We're on the last index
@@ -168,9 +178,11 @@ export function createImmerStore<T extends object>(
     {},
     {
       get(target, path, receiver) {
+        console.log(`Getting path: ${path}`);
         return this.nest(function () {});
       },
       apply(target, thisArg, argList) {
+        console.log(`running func ${this.path.join(", ")}`);
         const [signal] = addSignalPathId(this.path as any);
         return signal[0]();
       },

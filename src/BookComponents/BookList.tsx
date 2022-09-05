@@ -4,7 +4,7 @@ import { BookStore } from "./BookState";
 export function BookList() {
   return (
     <ul>
-      <h2>My books ({BookStore.state.books().length})</h2>
+      <h2>My books ({BookStore.state.books.length()})</h2>
       <button onClick={() => BookStore.undo()}>UNDO</button>
       <button onClick={() => BookStore.redo()}>REDO</button>
       <br />
