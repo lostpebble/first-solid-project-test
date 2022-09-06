@@ -7,10 +7,11 @@ type NotWrappable = string | number | bigint | symbol | boolean | Function | nul
 
 type TUpdater<T> = (draft: Draft<T>, original: T) => void;
 
-type TFunctionified<O extends any> = {
-  [K in keyof O]: O[K] extends string | number | bigint | boolean | symbol | null | undefined
-    ? () => O[K]
-    : (() => O[K]) & TFunctionified<O[K]>;
+export type TFunctionified<O extends any> = O extends Array<infer T> ? ({
+  [ind: number]: (() => T) & Required<TFunctionified<T>>;
+  length: () => number;
+}) : {
+  [K in keyof O]: Required<TFunctionified<O[K]>> & (() => O[K]);
 };
 
 interface IImmerStore<T extends object> {
@@ -21,6 +22,7 @@ interface IImmerStore<T extends object> {
 }
 
 const sigs: unique symbol = Symbol("sigs");
+const childSigs: unique symbol = Symbol("child_sigs");
 
 interface IStoredSymbol {
   signal: Signal<any>;
@@ -28,6 +30,7 @@ interface IStoredSymbol {
 
 interface IDeepSignalStorage {
   [sigs]?: IStoredSymbol;
+  [childSigs]?: IStoredSymbol;
 
   [key: number | string]: IDeepSignalStorage;
 }
@@ -44,62 +47,63 @@ export function createImmerStore<T extends object>(
     reverse: [],
   };
 
-  const signals: {
-    [proxyId: number]: {
-      path: (string | number)[];
-      signal: Signal<any>;
-    };
-  } = {};
-
   const deepSignalStorage: {
     [key: number | string]: IDeepSignalStorage;
   } = {};
 
-  console.log(signals);
   console.log(deepSignalStorage);
   console.log(storePatches);
 
   function addSignalPathId(path: (string | number)[]): [signal: Signal<any>, signalState: any] {
     let curState: any = (currentState as any)[path[0]];
 
-    if (deepSignalStorage[path[0]] == null) {
+    if (deepSignalStorage[path[0]] === undefined) {
       deepSignalStorage[path[0]] = {};
     }
 
-    let curObj = deepSignalStorage[path[0]];
+    let sigStore = deepSignalStorage[path[0]];
     let signal: Signal<any>;
     for (let i = 0; i < path.length; i += 1) {
       if (i === path.length - 1) {
         // We are at the final index
-        if (curObj[sigs] == null) {
+        if (sigStore[sigs] === undefined) {
           signal = createSignal(curState);
-          curObj[sigs] = { signal };
+          sigStore[sigs] = { signal };
         } else {
-          signal = curObj[sigs].signal;
+          signal = sigStore[sigs].signal;
         }
       } else {
         if (curState != null) {
           curState = curState[path[i + 1]];
         }
 
-        if (curObj[path[i + 1]] == null) {
-          curObj[path[i + 1]] = {};
+        if (sigStore[path[i + 1]] === undefined) {
+          sigStore[path[i + 1]] = {};
         }
 
-        curObj = curObj[path[i + 1]];
+        sigStore = sigStore[path[i + 1]];
       }
     }
 
     return [signal!, curState];
   }
 
+  function replaceAllDeepSignals(deepSignals: IDeepSignalStorage, newState: any) {
+    deepSignals[sigs]?.signal[1](newState);
+
+    for (const key in deepSignals) {
+      replaceAllDeepSignals(deepSignals[key], newState[key]);
+    }
+  }
+
   function updateSignals(patches: Patch[]) {
     for (const patch of patches) {
+      console.log("Need to apply patch", patch);
       let curSigObj: IDeepSignalStorage = deepSignalStorage[patch.path[0]];
       let curState: any = (currentState as any)[patch.path[0]];
 
       for (let i = 0; i < patch.path.length; i += 1) {
-        if (curSigObj == null) {
+        if (curSigObj === undefined) {
           break;
         }
 
@@ -127,7 +131,12 @@ export function createImmerStore<T extends object>(
           if (patch.op === "remove") {
             curSigObj[sigs]?.signal[1](undefined);
           } else {
-            curSigObj[sigs]?.signal[1](patch.value);
+            if (patch.op === "replace") {
+              // Need to go deeper to make sure all signals are updated (if there are any)
+              replaceAllDeepSignals(curSigObj, patch.value);
+            } else {
+              curSigObj[sigs]?.signal[1](patch.value);
+            }
           }
 
           break;
@@ -178,7 +187,7 @@ export function createImmerStore<T extends object>(
     {},
     {
       get(target, path, receiver) {
-        console.log(`Getting path: ${path}`);
+        console.log(`Getting path: ${String(path)}`);
         return this.nest(function () {});
       },
       apply(target, thisArg, argList) {

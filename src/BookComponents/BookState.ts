@@ -1,11 +1,11 @@
 import { createImmerStore } from "../utils/createImmerStore";
 
 type Book = {
-  title: string;
+  title?: string;
   author: string;
 };
 
-const initialBooks: Book[] = [
+export const initialBooks: Book[] = [
   { title: "Code Complete", author: "Steve McConnell" },
   { title: "The Hobbit", author: "J.R.R. Tolkien" },
   {
@@ -13,13 +13,25 @@ const initialBooks: Book[] = [
     author: "Some tosser pommie bastard",
   },
 ];
+
 /*
 const [books, setBooks] = createSignal(initialBooks);
 
 export const bookState = books;
 export const setBookState = setBooks;*/
 
-export const BookStore = createImmerStore({ books: initialBooks });
+export interface IBookStore {
+  books: Book[];
+  testObject: {
+    hi: boolean;
+    something?: string;
+  };
+}
+
+export const BookStore = createImmerStore<IBookStore>({
+  books: initialBooks,
+  testObject: { hi: true, something: "else" },
+});
 
 BookStore.update((s) => {
   s.books.push({

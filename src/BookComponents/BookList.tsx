@@ -1,61 +1,73 @@
-import { createSignal, For } from "solid-js";
-import { BookStore } from "./BookState";
+import { For } from "solid-js";
+import { IBookStore, initialBooks } from "./BookState";
+import { createImmerStore } from "../utils/createImmerStore";
 
 export function BookList() {
+  const { state: { books }, update, undo, redo } = createImmerStore<IBookStore>({
+    books: initialBooks,
+    testObject: { hi: true, something: "else" },
+  });
+
   return (
     <ul>
-      <h2>My books ({BookStore.state.books.length()})</h2>
-      <button onClick={() => BookStore.undo()}>UNDO</button>
-      <button onClick={() => BookStore.redo()}>REDO</button>
+      <h2>My books ({books.length()})</h2>
+      <button onClick={() => undo()}>UNDO</button>
+      <button onClick={() => redo()}>REDO</button>
       <br />
       <br />
-      <button
-        onClick={() => {
-          BookStore.update((s) => {
-            s.books.push({
-              author: `${Math.random() * 1000} boon`,
-              title: "great great great",
+      <div style={{ gap: `${books.length() / 10}em`, display: "flex" }}>
+        <button
+          onClick={() => {
+            update((s) => {
+              s.books = [];
             });
-          });
-        }}
-      >
-        Add random book
-      </button>
-      <button
-        onClick={() => {
-          BookStore.update((s, o) => {
-            const index = Math.floor(o.books.length * Math.random());
-            s.books[index] = {
-              title: `${o.books[index].title} boobs`,
-              author: `${o.books[index].author} rock`,
-            };
-          });
-        }}
-      >
-        Edit random book
-      </button>
-      <For each={BookStore.state.books()}>
+          }}
+        >
+          Remove all books
+        </button>
+        <button
+          onClick={() => {
+            update((s, o) => {
+              for (const book of s.books) {
+                delete book.title;
+              }
+            });
+          }}
+        >
+          Remove all titles
+        </button>
+        <button
+          onClick={() => {
+            update((s) => {
+              s.books.push({
+                author: `${Math.random() * 1000} boon`,
+                title: "great great great",
+              });
+            });
+          }}
+        >
+          Add random book
+        </button>
+        <button
+          onClick={() => {
+            update((s, o) => {
+              const index = Math.floor(o.books.length * Math.random());
+              s.books[index] = {
+                title: `${o.books[index].title} boobs`,
+                author: `${o.books[index].author} rock`,
+              };
+            });
+          }}
+        >
+          Edit random book
+        </button>
+      </div>
+      <For each={books()}>
         {(book) => {
-          const [editing, setEditing] = createSignal({
-            editing: false,
-            title: book.title,
-            author: book.author,
-          });
-          // const [editingTitle, setTitle] = createSignal(book.title);
-          // const [editingAuthor, setAuthor] = createSignal(book.author);
           return (
             <li>
-              <span contentEditable={editing().editing}>{editing().title}</span>{" "}
-              <span
-                contentEditable={editing().editing}
-                onChange={(e) => setEditing({ author: e.target.textContent ?? "" })}
-                style={{ "font-style": "italic" }}
-              >
-                ({editing().author})
-              </span>
-              <button onClick={() => setEditing((e) => ({ ...e, editing: !e.editing }))}>
-                {editing().editing ? "Save" : "Edit"}
-              </button>
+              <span>{book.title}</span>{" "}
+              <span style={{ "font-style": "italic" }}>({book.author})</span>
             </li>
           );
         }}
